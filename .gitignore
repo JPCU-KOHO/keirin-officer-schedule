@@ -1,0 +1,15 @@
+# Local data products created by the daily update
+public/data/keirin-status.json
+tmp/
+
+# Working files and previous Site-hosting project
+site/
+work/results/
+work/*.xlsx
+支部長_代行_本日状況一覧_*.xlsx
+!支部長・代行・副支部長一覧_20260709.xlsx
+
+# Python and editor files
+__pycache__/
+*.py[cod]
+.DS_Store
