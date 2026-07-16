@@ -76,7 +76,7 @@ jobs:
   notify-failure:
     # 失敗時は同じ未解決Issueに追記し、実行者（定期実行ではスケジュール設定者）を担当者にする。
     if: ${{ failure() }}
-    needs: [keep_schedule_active, build, deploy]
+    needs: [keep_schedule_active, build, deploy, resolve-failure-notice]
     runs-on: ubuntu-latest
     permissions:
       issues: write
