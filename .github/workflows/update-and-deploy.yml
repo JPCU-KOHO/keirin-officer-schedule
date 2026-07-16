@@ -3,8 +3,10 @@ name: Update and deploy schedule
 on:
   workflow_dispatch:
   schedule:
-    # 05:07 JST (UTC 20:07 on the preceding day). :00を避けて遅延を抑える。
+    # 主実行: 05:07 JST (UTC 20:07 on the preceding day)。:00を避けて遅延を抑える。
     - cron: "7 20 * * *"
+    # 予備実行: scheduleイベントの遅延・取りこぼし時にも同日中に更新する。
+    - cron: "32 20 * * *"
 
 permissions:
   contents: read
