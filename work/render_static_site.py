@@ -19,6 +19,29 @@ STATUS = {
 }
 
 
+# 支部の並びは、画面の「支部（北から）順」と地区タブの両方で利用する。
+# 名簿にある長崎は、地区分類の一覧から漏れているものの、九州の支部として扱う。
+REGIONS = {
+    "北日本": ("北海道", "青森", "宮城", "福島"),
+    "関東": ("茨城", "栃木", "群馬", "埼玉", "東京", "新潟"),
+    "南関東": ("千葉", "神奈川", "静岡"),
+    "中部": ("愛知", "富山", "岐阜", "三重"),
+    "近畿": ("福井", "京都", "大阪", "兵庫", "奈良", "和歌山"),
+    "中国": ("岡山", "広島", "山口"),
+    "四国": ("香川", "徳島", "高知", "愛媛"),
+    "九州": ("福岡", "佐賀", "長崎", "大分", "熊本", "鹿児島"),
+}
+BRANCH_ORDER = {
+    branch: index
+    for index, branch in enumerate(branch for branches in REGIONS.values() for branch in branches)
+}
+BRANCH_REGION = {
+    branch: region
+    for region, branches in REGIONS.items()
+    for branch in branches
+}
+
+
 def esc(value: object) -> str:
     return html.escape(str(value or ""), quote=True)
 
@@ -67,7 +90,7 @@ def today_race(officer: dict) -> str:
     return "—"
 
 
-def officer_row(officer: dict) -> str:
+def officer_row(officer: dict, status_rank: dict[str, int]) -> str:
     player = officer["player"]
     label, class_name = STATUS.get(officer.get("today_status"), STATUS["unverified"])
     source = officer.get("keirin_url")
@@ -75,7 +98,10 @@ def officer_row(officer: dict) -> str:
         f'<a class="source-link" href="{esc(source)}" target="_blank" rel="noreferrer">keirin.jp</a>'
         if source else '<span class="muted">—</span>'
     )
-    return f"""<tr>
+    branch = str(player.get("branch") or "")
+    region = BRANCH_REGION.get(branch, "その他")
+    branch_rank = BRANCH_ORDER.get(branch, 999)
+    return f"""<tr data-region="{esc(region)}" data-status-rank="{status_rank.get(officer.get('today_status'), 99)}" data-branch-rank="{branch_rank}" data-officer-rank="{player.get('order', 999)}">
       <td class="support">{esc(player.get('branch'))}</td>
       <td><div class="person"><span class="position">{esc(player.get('role'))}</span><strong>{esc(player.get('name'))}</strong></div></td>
       <td><span class="status {class_name}">{label}</span></td>
@@ -90,8 +116,8 @@ CSS = """
 * { box-sizing:border-box; } body { margin:0; color:var(--ink); background:var(--paper); font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Yu Gothic","Noto Sans JP",sans-serif; } a { color:inherit; }
 .hero { color:#fffdf7; background:radial-gradient(circle at 84% 12%,rgba(42,117,122,.48),transparent 29%),linear-gradient(135deg,#071a31 0%,#092745 55%,#0a304c 100%); padding:27px clamp(22px,6vw,92px) 64px; overflow:hidden; position:relative; }.hero::after { content:""; position:absolute; width:660px; height:660px; border:1px solid rgba(199,154,72,.48); border-radius:50%; right:-240px; bottom:-490px; box-shadow:0 0 0 50px rgba(199,154,72,.05),0 0 0 100px rgba(199,154,72,.04); pointer-events:none; }
 .topline,.hero-grid,.content { max-width:1280px; margin:auto; position:relative; z-index:1; }.topline { display:flex; align-items:center; justify-content:space-between; gap:16px; padding-bottom:46px; border-bottom:1px solid rgba(255,255,255,.18); }.eyebrow { margin:0; letter-spacing:.15em; font-size:11px; font-weight:750; color:#e4bd76; }.refresh-note { margin:0; font-size:13px; color:#d5e2e4; }.hero-grid { display:grid; grid-template-columns:minmax(0,1fr) 335px; align-items:end; gap:70px; padding-top:57px; } h1 { margin:0; font-size:clamp(42px,6.4vw,78px); letter-spacing:-.06em; line-height:1.12; font-weight:760; }.lead { margin:27px 0 25px; max-width:630px; color:#d7e2e8; font-size:16px; line-height:1.85; }.date-chip { display:inline-flex; align-items:baseline; gap:13px; border-left:3px solid var(--gold); padding-left:13px; }.date-chip span { color:#a9bcc5; font-size:12px; }.date-chip strong { font-size:18px; }.hero-panel { padding:28px; background:rgba(3,14,28,.4); border:1px solid rgba(237,211,159,.47); box-shadow:14px 14px 0 rgba(3,14,28,.16); }.hero-panel p { margin:0; color:#d2ac66; font-size:13px; }.hero-panel strong { display:block; margin:6px 0; font-size:64px; line-height:1; letter-spacing:-.06em; }.hero-panel strong span { margin-left:7px; font-size:16px; letter-spacing:0; }.hero-panel-rule { height:1px; margin:21px 0 14px; background:rgba(255,255,255,.2); }.hero-panel small { color:#c0d0d7; }
-.content { padding:58px clamp(22px,6vw,92px) 88px; }.table-card { background:#fff; border:1px solid var(--line); box-shadow:0 10px 28px rgba(18,38,57,.06); }.table-title-row { padding:22px 26px; border-bottom:1px solid var(--line); display:flex; justify-content:space-between; align-items:center; }.table-title-row h2 { margin:0; font-size:17px; }.table-title-row span { font-size:12px; color:var(--muted); }.table-wrap { overflow-x:auto; } table { width:100%; min-width:970px; border-collapse:collapse; } th { padding:13px 16px; background:#eef3f2; color:#52646c; text-align:left; font-size:11px; letter-spacing:.07em; white-space:nowrap; } td { padding:17px 16px; border-top:1px solid #e9eeed; vertical-align:top; font-size:13px; line-height:1.5; } tbody tr:first-child td { border-top:0; } tbody tr:hover { background:#fcfdfc; }.support { color:var(--teal); font-weight:700; white-space:nowrap; }.person { display:grid; gap:3px; min-width:118px; }.person strong { font-size:15px; }.position { color:var(--muted); font-size:11px; }.status { display:inline-block; border-radius:99px; padding:4px 9px; white-space:nowrap; font-size:11px; font-weight:700; }.status-racing { color:#fff; background:#b46d26; }.status-idle { color:#51616e; background:#edf1f2; }.status-check { color:#785817; background:#f5edcf; }.status-ongoing { color:#755913; background:#f6e8b5; }.status-inspection { color:#155c62; background:#d9eeec; }.status-vacancy { color:#72525e; background:#f0e4e8; }.race { white-space:nowrap; }.race-detail { display:inline-flex; align-items:center; gap:7px; white-space:nowrap; }.race-detail img { display:block; width:auto; height:18px; object-fit:contain; }.upcoming { min-width:255px; }.upcoming ul { display:grid; gap:5px; margin:0; padding:0; list-style:none; }.upcoming a { text-decoration-color:#9cabb2; text-underline-offset:3px; }.upcoming a:hover,.source-link:hover { color:var(--teal); }.source-link { color:var(--teal); font-size:12px; font-weight:700; text-underline-offset:3px; }.muted { color:#9aa4aa; }.notice { display:grid; grid-template-columns:130px 1fr; gap:16px; margin-top:26px; padding:20px 22px; border-left:3px solid var(--gold); background:#eee8da; }.notice strong { font-size:13px; }.notice p { margin:0; color:#53606a; font-size:13px; line-height:1.7; }
-@media (max-width:760px) { .hero { padding-bottom:45px; }.topline { padding-bottom:28px; }.hero-grid { grid-template-columns:1fr; gap:30px; padding-top:40px; }.hero-panel { max-width:100%; }.content { padding-top:42px; }.notice { grid-template-columns:1fr; gap:7px; } }
+.content { padding:58px clamp(22px,6vw,92px) 88px; }.table-card { background:#fff; border:1px solid var(--line); box-shadow:0 10px 28px rgba(18,38,57,.06); }.table-title-row { padding:22px 26px; border-bottom:1px solid var(--line); display:flex; justify-content:space-between; align-items:center; gap:16px; }.table-title-row h2 { margin:0; font-size:17px; }.table-title-row span { font-size:12px; color:var(--muted); }.table-controls { padding:18px 26px 19px; border-bottom:1px solid var(--line); background:#fbfcfb; }.control-label { display:block; margin:0 0 8px; color:#667586; font-size:11px; font-weight:750; letter-spacing:.06em; }.tab-list,.sort-list { display:flex; flex-wrap:wrap; gap:7px; }.tab-list { margin-bottom:16px; }.filter-tab,.sort-button { appearance:none; cursor:pointer; border:1px solid #cbd6d5; border-radius:999px; padding:7px 11px; color:#36505b; background:#fff; font:700 12px/1 -apple-system,BlinkMacSystemFont,"Hiragino Sans","Yu Gothic","Noto Sans JP",sans-serif; transition:background .16s,color .16s,border-color .16s; }.filter-tab:hover,.sort-button:hover { border-color:#78a09d; }.filter-tab[aria-pressed="true"],.sort-button[aria-pressed="true"] { color:#fff; border-color:var(--teal); background:var(--teal); }.table-wrap { overflow-x:auto; } table { width:100%; min-width:970px; border-collapse:collapse; } th { padding:13px 16px; background:#eef3f2; color:#52646c; text-align:left; font-size:11px; letter-spacing:.07em; white-space:nowrap; } td { padding:17px 16px; border-top:1px solid #e9eeed; vertical-align:top; font-size:13px; line-height:1.5; } tbody tr:first-child td { border-top:0; } tbody tr:hover { background:#fcfdfc; } tbody tr[hidden] { display:none; }.support { color:var(--teal); font-weight:700; white-space:nowrap; }.person { display:grid; gap:3px; min-width:118px; }.person strong { font-size:15px; }.position { color:var(--muted); font-size:11px; }.status { display:inline-block; border-radius:99px; padding:4px 9px; white-space:nowrap; font-size:11px; font-weight:700; }.status-racing { color:#fff; background:#b46d26; }.status-idle { color:#51616e; background:#edf1f2; }.status-check { color:#785817; background:#f5edcf; }.status-ongoing { color:#755913; background:#f6e8b5; }.status-inspection { color:#155c62; background:#d9eeec; }.status-vacancy { color:#72525e; background:#f0e4e8; }.race { white-space:nowrap; }.race-detail { display:inline-flex; align-items:center; gap:7px; white-space:nowrap; }.race-detail img { display:block; width:auto; height:18px; object-fit:contain; }.upcoming { min-width:255px; }.upcoming ul { display:grid; gap:5px; margin:0; padding:0; list-style:none; }.upcoming a { text-decoration-color:#9cabb2; text-underline-offset:3px; }.upcoming a:hover,.source-link:hover { color:var(--teal); }.source-link { color:var(--teal); font-size:12px; font-weight:700; text-underline-offset:3px; }.muted { color:#9aa4aa; }.notice { display:grid; grid-template-columns:130px 1fr; gap:16px; margin-top:26px; padding:20px 22px; border-left:3px solid var(--gold); background:#eee8da; }.notice strong { font-size:13px; }.notice p { margin:0; color:#53606a; font-size:13px; line-height:1.7; }
+@media (max-width:760px) { .hero { padding-bottom:45px; }.topline { padding-bottom:28px; }.hero-grid { grid-template-columns:1fr; gap:30px; padding-top:40px; }.hero-panel { max-width:100%; }.content { padding-top:42px; }.table-title-row,.table-controls { padding-left:18px; padding-right:18px; }.notice { grid-template-columns:1fr; gap:7px; } }
 """
 
 
@@ -102,12 +128,47 @@ def render(payload: dict) -> str:
     racing = sum(item.get("today_status") == "racing" for item in officers)
     inspections = sum(item.get("today_status") == "pre_inspection" for item in officers)
     checking = sum(item.get("today_status") == "unverified" for item in officers)
-    rows = "\n".join(officer_row(item) for item in officers)
+    rows = "\n".join(officer_row(item, rank) for item in officers)
+    tabs = '\n'.join(
+        f'<button class="filter-tab" type="button" data-region="{esc(region)}" aria-pressed="false">{esc(region)}</button>'
+        for region in REGIONS
+    )
     base_date = japanese_date(payload["baseDate"])
     return f"""<!doctype html>
 <html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="description" content="支部長・支部長代行・副支部長の出走・予定一覧"><title>支部長等 出走・予定一覧</title><style>{CSS}</style></head>
-<body><main><section class="hero"><div class="topline"><p class="eyebrow">OFFICER RACE DESK</p><p class="refresh-note">情報更新：毎朝 5:07</p></div><div class="hero-grid"><div><h1>支部長等<br>出走・予定一覧</h1><p class="lead">支部長・支部長代行・副支部長の、本日の出走状況と今後の予定をまとめて確認できます。</p><div class="date-chip"><span>対象日</span><strong>{base_date}</strong></div></div><div class="hero-panel"><p>本日の出走</p><strong>{racing}<span>名</span></strong><div class="hero-panel-rule"></div><small>確認対象 {len(officers)}行 ／ 前検日 {inspections}名 ／ 確認中 {checking}名</small></div></div></section>
-<section class="content"><div class="table-card"><div class="table-title-row"><h2>役員別一覧</h2><span>全 {len(officers)} 名</span></div><div class="table-wrap"><table><thead><tr><th>支部</th><th>役職・氏名</th><th>本日の状況</th><th>本日のレース</th><th>今後の予定（直近３開催）</th><th>情報源</th></tr></thead><tbody>{rows}</tbody></table></div></div><aside class="notice"><strong>更新について</strong><p>keirin.jp の選手ページを直接照合して作成しています。keirin.jp の更新後、毎朝5時ごろに一覧へ反映します。</p></aside></section></main></body></html>"""
+<body><main><section class="hero"><div class="topline"><p class="eyebrow">OFFICER RACE DESK</p><p class="refresh-note">情報更新：毎朝 5:07</p></div><div class="hero-grid"><div><h1>支部長等<br>出走・予定一覧</h1><p class="lead">支部長・支部長代行の、本日の出走状況と今後の予定をまとめて確認できます。</p><div class="date-chip"><span>対象日</span><strong>{base_date}</strong></div></div><div class="hero-panel"><p>本日の出走</p><strong>{racing}<span>名</span></strong><div class="hero-panel-rule"></div><small>確認対象 {len(officers)}行 ／ 前検日 {inspections}名 ／ 確認中 {checking}名</small></div></div></section>
+<section class="content"><div class="table-card"><div class="table-title-row"><h2>役員別一覧</h2><span id="result-count">全 {len(officers)} 名</span></div><div class="table-controls"><span class="control-label">地区</span><div class="tab-list" role="group" aria-label="地区で絞り込む"><button class="filter-tab" type="button" data-region="all" aria-pressed="true">現在のもの</button>{tabs}</div><span class="control-label">並び替え</span><div class="sort-list" role="group" aria-label="一覧の並び替え"><button class="sort-button" type="button" data-sort="status" aria-pressed="true">本日の状況順</button><button class="sort-button" type="button" data-sort="branch" aria-pressed="false">支部（北から）順</button></div></div><div class="table-wrap"><table><thead><tr><th>支部</th><th>役職・氏名</th><th>本日の状況</th><th>本日のレース</th><th>今後の予定（直近３開催）</th><th>情報源</th></tr></thead><tbody id="officer-rows">{rows}</tbody></table></div></div><aside class="notice"><strong>更新について</strong><p>keirin.jp の選手ページを直接照合して作成しています。keirin.jp の更新後、毎朝5時ごろに一覧へ反映します。</p></aside></section></main><script>
+(() => {{
+  const body = document.getElementById('officer-rows');
+  const count = document.getElementById('result-count');
+  const tabs = Array.from(document.querySelectorAll('.filter-tab'));
+  const sorts = Array.from(document.querySelectorAll('.sort-button'));
+  const rows = Array.from(body.rows);
+  let region = 'all';
+  let sort = 'status';
+
+  const number = (row, key) => Number(row.dataset[key] || 999);
+  const compare = (left, right) => {{
+    const first = sort === 'branch' ? 'branchRank' : 'statusRank';
+    const second = sort === 'branch' ? 'officerRank' : 'branchRank';
+    return number(left, first) - number(right, first)
+      || number(left, second) - number(right, second)
+      || number(left, 'officerRank') - number(right, 'officerRank');
+  }};
+  const update = () => {{
+    const visible = rows.filter((row) => region === 'all' || row.dataset.region === region).sort(compare);
+    const hidden = rows.filter((row) => !visible.includes(row));
+    visible.forEach((row) => {{ row.hidden = false; }});
+    hidden.forEach((row) => {{ row.hidden = true; }});
+    body.replaceChildren(...visible, ...hidden);
+    count.textContent = region === 'all' ? `全 ${{visible.length}} 名` : `${{region}} ${{visible.length}} 名`;
+    tabs.forEach((button) => button.setAttribute('aria-pressed', String(button.dataset.region === region)));
+    sorts.forEach((button) => button.setAttribute('aria-pressed', String(button.dataset.sort === sort)));
+  }};
+  tabs.forEach((button) => button.addEventListener('click', () => {{ region = button.dataset.region; update(); }}));
+  sorts.forEach((button) => button.addEventListener('click', () => {{ sort = button.dataset.sort; update(); }}));
+}})();
+</script></body></html>"""
 
 
 def main() -> int:
