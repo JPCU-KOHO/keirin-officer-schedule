@@ -16,6 +16,34 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  keep_schedule_active:
+    # GitHubは公開リポジトリで60日間活動がないと定期実行を停止するため、
+    # 月に1回だけ小さな記録をコミットして定期更新を維持する。
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - name: Refresh the scheduler heartbeat when due
+        run: |
+          last_heartbeat="$(git log -1 --format=%ct -- .github/schedule-heartbeat || true)"
+          now="$(date +%s)"
+          thirty_days=2592000
+
+          if [ -n "$last_heartbeat" ] && [ $((now - last_heartbeat)) -lt "$thirty_days" ]; then
+            echo "The scheduler heartbeat is still current."
+            exit 0
+          fi
+
+          date -u +%FT%TZ > .github/schedule-heartbeat
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .github/schedule-heartbeat
+          git commit -m "chore: keep scheduled updates active"
+          git push origin HEAD:main
   build:
     runs-on: ubuntu-latest
     steps:
@@ -45,3 +73,91 @@ jobs:
     steps:
       - id: deployment
         uses: actions/deploy-pages@v4
+  notify-failure:
+    # 失敗時は同じ未解決Issueに追記し、実行者（定期実行ではスケジュール設定者）を担当者にする。
+    if: ${{ failure() }}
+    needs: [keep_schedule_active, build, deploy]
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    steps:
+      - name: Create or update the failure notice
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const marker = '<!-- keirin-schedule-update-failure -->';
+            const title = '【自動更新エラー】競輪役員スケジュール';
+            const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            const message = `${marker}\n\n更新処理が失敗しました。\n\n- 実行日時: ${new Date().toISOString()}\n- 実行種別: ${context.eventName}\n- [実行ログを確認する](${runUrl})`;
+            const { data: openIssues } = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              per_page: 100,
+            });
+            const existing = openIssues.find((issue) => issue.body?.includes(marker));
+
+            if (existing) {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: existing.number,
+                body: message,
+              });
+              core.info(`Updated failure notice issue #${existing.number}.`);
+            } else {
+              const { data: created } = await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title,
+                body: message,
+              });
+              try {
+                await github.rest.issues.addAssignees({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: created.number,
+                  assignees: [context.actor],
+                });
+              } catch (error) {
+                core.warning(`Could not assign the issue to ${context.actor}: ${error.message}`);
+              }
+              core.info(`Created failure notice issue #${created.number}.`);
+            }
+  resolve-failure-notice:
+    # 次回以降に正常更新できた場合は、未解決のエラー通知を自動で解決済みにする。
+    if: ${{ always() && needs.build.result == 'success' && needs.deploy.result == 'success' && (needs.keep_schedule_active.result == 'success' || needs.keep_schedule_active.result == 'skipped') }}
+    needs: [keep_schedule_active, build, deploy]
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    steps:
+      - name: Close a resolved failure notice
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const marker = '<!-- keirin-schedule-update-failure -->';
+            const { data: openIssues } = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              per_page: 100,
+            });
+            const existing = openIssues.find((issue) => issue.body?.includes(marker));
+
+            if (existing) {
+              const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: existing.number,
+                body: `更新処理が正常に完了したため、自動で解決済みにします。\n\n[正常終了した実行ログ](${runUrl})`,
+              });
+              await github.rest.issues.update({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: existing.number,
+                state: 'closed',
+              });
+              core.info(`Closed resolved failure notice issue #${existing.number}.`);
+            }
