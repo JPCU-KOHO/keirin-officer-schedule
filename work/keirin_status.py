@@ -352,8 +352,9 @@ def parse_keirin(raw: bytes, url: str, base: dt.date) -> tuple[str, str, str, st
     future_nodes = doc.xpath("//p[contains(normalize-space(.),'出場予定')]")
     if future_nodes:
         tables = future_nodes[0].getparent().xpath(".//table")
-        if tables:
-            for row in tables[0].xpath(".//tbody/tr"):
+        # 個人ページに複数の予定表がある場合にも、掲載分をすべて取得する。
+        for table in tables:
+            for row in table.xpath(".//tbody/tr"):
                 cells = [norm(c.text_content()) for c in row.xpath("./th|./td")]
                 if len(cells) < 2:
                     continue
