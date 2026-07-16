@@ -46,6 +46,10 @@ VENUE_ALIASES = {
     "熊": "熊本",
 }
 
+# 常勤役員は出走予定の確認対象外。名簿の変更時にも次回以降の自動更新で除外する。
+EXCLUDED_OFFICER_NAMES = {"金古将人", "市川健太", "宮越大", "安田光義", "高田健一"}
+ROLE_OVERRIDES = {"陶器一馬": "支部長職務代行者"}
+
 NS_MAIN = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
 NS_REL_DOC = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
 NS_REL_PKG = "http://schemas.openxmlformats.org/package/2006/relationships"
@@ -197,16 +201,21 @@ def extract_players(path: Path) -> list[Player]:
             continue
         chair_name = clean_source_label(get_cell(row, indexes["chair"]))
         chair_reg = normalize_reg(get_cell(row, indexes["chair_reg"]))
-        if chair_name and len(chair_reg) == 5:
-            players.append(Player(branch, chair_name, chair_reg, "支部長", order))
-        else:
-            players.append(Player(branch, "（支部長欠員）", "－", "支部長", order, True))
-        order += 1
+        # 大阪支部の支部長行は一覧対象外とする。
+        if branch != "大阪":
+            if chair_name and len(chair_reg) == 5:
+                if chair_name not in EXCLUDED_OFFICER_NAMES:
+                    players.append(Player(branch, chair_name, chair_reg, "支部長", order))
+                    order += 1
+            else:
+                players.append(Player(branch, "（支部長欠員）", "－", "支部長", order, True))
+                order += 1
 
         deputy_name = clean_source_label(get_cell(row, indexes["deputy"]))
         deputy_reg = normalize_reg(get_cell(row, indexes["deputy_reg"]))
-        if deputy_name and len(deputy_reg) == 5:
-            players.append(Player(branch, deputy_name, deputy_reg, "支部長代行", order))
+        if deputy_name and len(deputy_reg) == 5 and deputy_name not in EXCLUDED_OFFICER_NAMES:
+            role = ROLE_OVERRIDES.get(deputy_name, "支部長代行")
+            players.append(Player(branch, deputy_name, deputy_reg, role, order))
             order += 1
     return players
 
