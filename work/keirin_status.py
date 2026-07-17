@@ -48,7 +48,7 @@ VENUE_ALIASES = {
 
 # 常勤役員は出走予定の確認対象外。名簿の変更時にも次回以降の自動更新で除外する。
 EXCLUDED_OFFICER_NAMES = {"金古将人", "市川健太", "宮越大", "安田光義", "高田健一"}
-ROLE_OVERRIDES = {"陶器一馬": "支部長職務代行者"}
+ROLE_OVERRIDES = {"陶器一馬": "支部長"}
 
 NS_MAIN = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
 NS_REL_DOC = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
