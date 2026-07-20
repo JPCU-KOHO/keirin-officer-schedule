@@ -3,10 +3,16 @@ name: Update and deploy schedule
 on:
   workflow_dispatch:
   schedule:
-    # 主実行: 05:07 JST (UTC 20:07 on the preceding day)。:00を避けて遅延を抑える。
-    - cron: "7 20 * * *"
-    # 予備実行: scheduleイベントの遅延・取りこぼし時にも同日中に更新する。
-    - cron: "32 20 * * *"
+    # 03:17〜09:17 JST。GitHub Actionsが混雑しやすい毎時00分を避ける。
+    # 公開済みデータが当日分なら preflight が後続の取得・公開を省略するため、
+    # 最初に成功した時点で残りは軽量な確認だけになる。
+    - cron: "17 18 * * *" # 03:17 JST（UTC前日）
+    - cron: "17 19 * * *" # 04:17 JST（UTC前日）
+    - cron: "17 20 * * *" # 05:17 JST（UTC前日）
+    - cron: "17 21 * * *" # 06:17 JST（UTC前日）
+    - cron: "17 22 * * *" # 07:17 JST（UTC前日）
+    - cron: "17 23 * * *" # 08:17 JST（UTC前日）
+    - cron: "17 0 * * *"  # 09:17 JST
 
 permissions:
   contents: read
@@ -18,6 +24,55 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  preflight:
+    # 公開済みのJSONを確認し、当日分（基準日・人数とも有効）なら再取得しない。
+    # 公開ページが一時的に取得できない場合は未更新として扱い、次の実行機会で回復できるようにする。
+    runs-on: ubuntu-latest
+    outputs:
+      should_update: ${{ steps.current.outputs.should_update }}
+      today: ${{ steps.current.outputs.today }}
+      published_date: ${{ steps.current.outputs.published_date }}
+      published_count: ${{ steps.current.outputs.published_count }}
+    steps:
+      - id: current
+        name: Check whether today's published data is already available
+        env:
+          FORCE_UPDATE: ${{ github.event_name == 'workflow_dispatch' }}
+        run: |
+          python3 - <<'PY'
+          import datetime as dt
+          import json
+          import os
+          import urllib.request
+
+          jst = dt.timezone(dt.timedelta(hours=9))
+          today = dt.datetime.now(jst).date().isoformat()
+          published_date = ""
+          published_count = 0
+
+          if os.environ.get("FORCE_UPDATE") != "true":
+              run_id = os.environ.get("GITHUB_RUN_ID", "local")
+              url = f"https://jpcu-koho.github.io/keirin-officer-schedule/data/keirin-status.json?check={today}-{run_id}"
+              try:
+                  with urllib.request.urlopen(url, timeout=20) as response:
+                      payload = json.load(response)
+                  published_date = str(payload.get("baseDate", ""))
+                  officers = payload.get("officers", [])
+                  published_count = len(officers) if isinstance(officers, list) else 0
+              except Exception as error:
+                  # 取得不能時は更新を試み、次の定期実行でも再試行する。
+                  print(f"Could not verify the published data: {error}")
+
+          should_update = published_date != today or published_count < 35
+          print(f"JST date: {today}; published: {published_date or 'unavailable'} ({published_count} officers)")
+          print(f"should_update: {should_update}")
+
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+              output.write(f"should_update={'true' if should_update else 'false'}\n")
+              output.write(f"today={today}\n")
+              output.write(f"published_date={published_date}\n")
+              output.write(f"published_count={published_count}\n")
+          PY
   keep_schedule_active:
     # GitHubは公開リポジトリで60日間活動がないと定期実行を停止するため、
     # 月に1回だけ小さな記録をコミットして定期更新を維持する。
@@ -47,6 +102,8 @@ jobs:
           git commit -m "chore: keep scheduled updates active"
           git push origin HEAD:main
   build:
+    needs: preflight
+    if: ${{ needs.preflight.outputs.should_update == 'true' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -72,13 +129,15 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
     needs: build
+    if: ${{ always() && needs.build.result == 'success' }}
     steps:
       - id: deployment
         uses: actions/deploy-pages@v4
   notify-failure:
-    # 失敗時は同じ未解決Issueに追記し、実行者（定期実行ではスケジュール設定者）を担当者にする。
-    if: ${{ failure() }}
-    needs: [keep_schedule_active, build, deploy, resolve-failure-notice]
+    # 朝の途中の失敗は次回で再試行する。手動実行または09:17 JSTの最終試行でも
+    # 回復しなかった場合だけ、同じ未解決Issueに通知する。
+    if: ${{ always() && needs.preflight.outputs.should_update == 'true' && (needs.build.result == 'failure' || needs.deploy.result == 'failure') && (github.event_name == 'workflow_dispatch' || github.event.schedule == '17 0 * * *') }}
+    needs: [preflight, keep_schedule_active, build, deploy, resolve-failure-notice]
     runs-on: ubuntu-latest
     permissions:
       issues: write
@@ -127,9 +186,10 @@ jobs:
               core.info(`Created failure notice issue #${created.number}.`);
             }
   resolve-failure-notice:
-    # 次回以降に正常更新できた場合は、未解決のエラー通知を自動で解決済みにする。
-    if: ${{ always() && needs.build.result == 'success' && needs.deploy.result == 'success' && (needs.keep_schedule_active.result == 'success' || needs.keep_schedule_active.result == 'skipped') }}
-    needs: [keep_schedule_active, build, deploy]
+    # 次回以降に正常更新できた場合、または公開済みデータが当日分と確認できた場合は
+    # 未解決のエラー通知を自動で解決済みにする。
+    if: ${{ always() && (needs.preflight.outputs.should_update == 'false' || (needs.build.result == 'success' && needs.deploy.result == 'success')) && (needs.keep_schedule_active.result == 'success' || needs.keep_schedule_active.result == 'skipped') }}
+    needs: [preflight, keep_schedule_active, build, deploy]
     runs-on: ubuntu-latest
     permissions:
       issues: write
